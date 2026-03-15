@@ -1,45 +1,42 @@
-> **This Repo is the continuation of [unixpickle/JamWiFi](https://github.com/unixpickle/JamWiFi), since it got deprecated and won't be updated**
+# JamWiFi
 
-#### Update 1.3.2
-- Added Join Option (Intended for Join by BSSID)
-- Scan Errors now have a description (console only)
+Continuation of [unixpickle/JamWiFi](https://github.com/unixpickle/JamWiFi). Swift rewrite with a native macOS UI.
 
-#### Update 1.3.1
-- Added Settings (Hidden Networks, ..)
-- Added Column Sorting
-
-#### Update 1.3
-- Rewrite in Swift
-
-#### Update 1.2
-- Added Support for MacOS Mojave/Catalina
-- Added Dark Mode Support
-
-
-[Download Latest Pre-Compiled](https://github.com/anonymouz4/JamWiFi/releases/latest)
+**Version:** 2.0.0  
+**Platform:** macOS 26 (Tahoe) or later (Xcode project)
 
 ---
 
-#### Known Bugs
-Devices that are build 2018 and later seem to crash when performing the packet injection. Unfortunately, I don't possess such a device myself, so I'm not able to fix it right now
+## What it does
+
+- Scan nearby wireless networks (CoreWLAN).
+- List clients on selected network(s) (raw 802.11 via libpcap).
+- Disconnect chosen clients by sending disassociation frames (optionally from all visible APs).
+- Join by BSSID, settings (hidden networks, scan options), column sorting.
+- SwiftUI-only UI with Settings and native menu.
+
+## Build
+
+1. Open `JamWiFi.xcodeproj` in Xcode.
+2. Build and run (⌘R).
+
+No pre-built binaries are provided; build from source. Requires macOS 26 (Tahoe) or later.
+
+## Tech
+
+- **UI:** SwiftUI only (no Objective-C UI, no XIBs). Entry point is Swift `@main`; menu and preferences use SwiftUI Commands and Settings.
+- **Wireless:** CoreWLAN (scan/channel), libpcap + Apple80211 (raw frames), Obj-C beacon/packet code in `Wireless/`.
 
 ---
-## Legacy ReadMe
 
-#### What Does It Do?
+## How it works
 
-JamWiFi allows you to select one or more nearby wireless networks, thereupon presenting a list of clients which are currently active on the network(s). Furthermore, JamWiFi allows you to disconnect clients of your choosing for as long as you wish.
+CoreWLAN is used for channel hopping and scanning. libpcap gives a raw packet interface for 802.11 frames. Clients are inferred from MAC source/destination in frames. Disassociation frames are sent repeatedly to chosen clients so they drop and stay off the AP; for multi-AP networks, frames are sent from every AP so clients can’t just roam to another AP.
 
-#### How Does It Work?
+## Caveats
 
-Under the hood, JamWiFi uses Apple's CoreWLAN API for channel hopping and network scanning. For a raw packet interface, libpcap provides a good point of abstraction for sending/receiving raw 802.11 frames at the MAC layer. All 802.11 MAC packets include a MAC address source and destination. This allows JamWiFi to determine the stations on a given Access Point.
+Networks with multiple APs (or multiple SSIDs in range) may allow clients to reassociate elsewhere. Sending disassociation from every visible AP to every target client reduces that but adds traffic.
 
-JamWiFi "kicks off" clients using a disassociation frame. When a client receives a disassociation frame from an Access Point, it will assume that any connection which it had with the AP is no longer active. However, once a client receives a disassociation frame, it may immediately attempt to establish a new session with the AP. To prevent against this, JamWiFi continually sends disassociation frames to every client quite frequently.
+## Disclaimer
 
-#### Caveats
-
-Some networks include more than one Access Point. Moreover, there may be scenarios in which more than one usable WiFi network is available to a client. In this scenario, even if a client is disassociated from one AP, it may successfully be able to establish a session with another AP. To overcome this, JamWiFi sends disassociation frames to every client from every AP, whether or not that client may be associated with the AP. While this may seem like unnecessary overhead, it is necessary for more complex networks with >1 access point.
-
-#### I can't wait to ruin my neighbors' networks!
-
-Just a second, there. I am not responsible for any damage you may do to anybody using this tool. This is for experimental and learning purposes only. Please, please, please, think twice before you do something stupid with this. How would you like it if your WiFi never worked because you had a jerk for a neighbor?
+For experimentation and learning only. You are responsible for your use of this tool. Do not use it to disrupt others’ networks.

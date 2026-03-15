@@ -2,281 +2,126 @@ import Cocoa
 import CoreWLAN
 import SystemConfiguration
 import Darwin
+import SwiftUI
+import Combine
 
-class JWListView: NSView, NSTableViewDelegate, NSTableViewDataSource {
-    var interfaceName = ""
-    var networks: [JWScanResult] = []
-    var scanButton: NSButton?
-    var joinButton: NSButton?
-    var disassociateButton: NSButton?
-    var jamButton: NSButton?
-    var progressIndicator: NSProgressIndicator?
-    var networksScrollView: NSScrollView?
-    var networksTable: NSTableView?
+final class JWListView: ObservableObject {
+    weak var navigation: AppNavigation?
+    weak var alertState: AppAlertState?
 
-    var sortAscending = true
-    var sortOrder = ""
+    @Published var interfaceName = ""
+    @Published var networks: [JWScanResult] = []
+    @Published var selectedNetworkIDs = Set<String>()
+    @Published var isScanning = false
+    @Published var headerStatsText = "No scan results yet"
+    @Published var copyButtonTitle = "Copy BSSID"
+    @Published var networkRequestingPassword: JWScanResult?
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
+    private var sortAscending = true
+    private var sortOrder = ""
+    private var copyFeedbackResetWorkItem: DispatchWorkItem?
 
-        networksScrollView = NSScrollView(frame: NSRect(x: 10, y: 52, width: frame.size.width - 20, height: frame.size.height - 62))
-        networksTable = NSTableView(frame: networksScrollView?.contentView.bounds ?? NSRect.zero)
-        disassociateButton = NSButton(frame: NSRect(x: 10, y: 10, width: 100, height: 24))
-        joinButton = NSButton(frame: NSRect(x: 110, y: 10, width: 100, height: 24))
-        scanButton = NSButton(frame: NSRect(x: 210, y: 10, width: 100, height: 24))
-        progressIndicator = NSProgressIndicator(frame: NSRect(x: 325, y: 14, width: 16, height: 16))
-        jamButton = NSButton(frame: NSRect(x: frame.size.width - 110, y: 10, width: 100, height: 24))
-
-        progressIndicator?.controlSize = .small
-        progressIndicator?.style = .spinning
-        progressIndicator?.isDisplayedWhenStopped = false
-
-        scanButton?.bezelStyle = .rounded
-        scanButton?.title = "Scan"
-        scanButton?.target = self
-        scanButton?.action = #selector(scanButton(_:))
-        scanButton?.font = NSFont.systemFont(ofSize: 13)
-
-        joinButton?.bezelStyle = .rounded
-        joinButton?.title = "Join"
-        joinButton?.target = self
-        joinButton?.action = #selector(joinButton(_:))
-        joinButton?.font = NSFont.systemFont(ofSize: 13)
-        joinButton?.isEnabled = false
-
-        disassociateButton?.bezelStyle = .rounded
-        disassociateButton?.title = "Deauth"
-        disassociateButton?.target = self
-        disassociateButton?.action = #selector(disassociateButton(_:))
-        disassociateButton?.font = NSFont.systemFont(ofSize: 13)
-
-        jamButton?.bezelStyle = .rounded
-        jamButton?.title = "Monitor"
-        jamButton?.target = self
-        jamButton?.action = #selector(jamButton(_:))
-        jamButton?.font = NSFont.systemFont(ofSize: 13)
-        jamButton?.isEnabled = false
-
-        let channelColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("channel"))
-        channelColumn.headerCell.stringValue = "CH"
-        channelColumn.width = 40
-        channelColumn.isEditable = true
-        channelColumn.sortDescriptorPrototype = NSSortDescriptor(key: channelColumn.identifier.rawValue, ascending: true)
-        networksTable?.addTableColumn(channelColumn)
-
-        let essidColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("essid"))
-        essidColumn.headerCell.stringValue = "ESSID"
-        essidColumn.width = 170
-        essidColumn.isEditable = true
-        essidColumn.sortDescriptorPrototype = NSSortDescriptor(key: essidColumn.identifier.rawValue, ascending: true)
-        networksTable?.addTableColumn(essidColumn)
-
-        let bssidColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("bssid"))
-        bssidColumn.headerCell.stringValue = "BSSID"
-        bssidColumn.width = 120
-        bssidColumn.isEditable = true
-        bssidColumn.sortDescriptorPrototype = NSSortDescriptor(key: bssidColumn.identifier.rawValue, ascending: true)
-        networksTable?.addTableColumn(bssidColumn)
-
-        let encColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("enc"))
-        encColumn.headerCell.stringValue = "Security"
-        encColumn.width = 160
-        encColumn.isEditable = true
-        encColumn.sortDescriptorPrototype = NSSortDescriptor(key: encColumn.identifier.rawValue, ascending: true)
-        networksTable?.addTableColumn(encColumn)
-
-        let rssiColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("rssi"))
-        rssiColumn.headerCell.stringValue = "RSSI"
-        rssiColumn.width = 40
-        rssiColumn.isEditable = true
-        rssiColumn.sortDescriptorPrototype = NSSortDescriptor(key: rssiColumn.identifier.rawValue, ascending: true)
-        networksTable?.addTableColumn(rssiColumn)
-
-        let channelBandColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("channelBand"))
-        channelBandColumn.headerCell.stringValue = "CH-Band"
-        channelBandColumn.width = 60
-        channelBandColumn.isEditable = true
-        channelBandColumn.sortDescriptorPrototype = NSSortDescriptor(key: channelBandColumn.identifier.rawValue, ascending: true)
-        networksTable?.addTableColumn(channelBandColumn)
-
-        networksScrollView?.documentView = networksTable
-        networksScrollView?.borderType = .bezelBorder
-        networksScrollView?.hasVerticalScroller = true
-        networksScrollView?.hasHorizontalScroller = false
-        networksScrollView?.autohidesScrollers = false
-
-        networksTable?.dataSource = self
-        networksTable?.delegate = self
-        networksTable?.allowsMultipleSelection = true
-        networksTable?.refusesFirstResponder = true
-
-        if let v = networksScrollView  { addSubview(v) }
-        if let v = scanButton          { addSubview(v) }
-        if let v = joinButton          { addSubview(v) }
-        if let v = disassociateButton  { addSubview(v) }
-        if let v = progressIndicator   { addSubview(v) }
-        if let v = jamButton           { addSubview(v) }
-
-        autoresizesSubviews = true
-        autoresizingMask = [.width, .height]
-        networksScrollView?.autoresizingMask = [.width, .height]
-        jamButton?.autoresizingMask = .minXMargin
+    init(navigation: AppNavigation?) {
+        self.navigation = navigation
+        updateHeaderStats()
     }
 
-    required init?(coder decoder: NSCoder) {
-        super.init(coder: decoder)
-    }
-
-    // MARK: - Button actions -
-
-    @objc func scanButton(_ sender: Any?) {
-        progressIndicator?.startAnimation(self)
-        scanButton?.isEnabled = false
+    func scanButton(_ sender: Any?) {
+        isScanning = true
         scanInBackground()
     }
 
-    @objc func sheetOkPressed(_ sender: Any?) {
-        self.window?.endSheet((sender as! NSView).window!, returnCode: .OK)
-    }
-    @objc func sheetCancelPressed(_ sender: Any?) {
-        self.window?.endSheet((sender as! NSView).window!, returnCode: .cancel)
-    }
-
-    @objc func joinButton(_ sender: Any?) {
-        progressIndicator?.startAnimation(self)
-        joinButton?.isEnabled = false
-        let network = self.networks[(networksTable?.selectedRowIndexes.first)!]
-        var password = ""
-
-        let done: ((Bool) -> ()) = { run in
-            if run {
-                guard let iface = CWWiFiClient.shared().interface() else {
-                    DispatchQueue.main.async {
-                        self.progressIndicator?.stopAnimation(self)
-                        self.joinButton?.isEnabled = true
-                        runAlert("Join Failed", "No Wi-Fi interface found.")
-                    }
-                    return
-                }
-                self.interfaceName = iface.interfaceName ?? "en0"
-                // Reconstruct a CWNetwork via a targeted scan so CWInterface.associate can use it.
-                let matched = (try? iface.scanForNetworks(withName: network.ssid))?.first {
-                    $0.bssid == network.bssid
-                }
-                if let cwNet = matched {
-                    do {
-                        try iface.associate(to: cwNet, password: password.isEmpty ? nil : password)
-                        print("Join success")
-                    } catch {
-                        print("Join failed: \(error)")
-                    }
-                }
-            }
-            DispatchQueue.main.async {
-                self.progressIndicator?.stopAnimation(self)
-                self.joinButton?.isEnabled = true
-            }
-        }
-
+    func joinButton(_ sender: Any?) {
+        guard let network = selectedNetworks.first else { return }
         if network.supportsSecurity(.none) == false {
-            let sheetWindow = NSWindow(
-                contentRect: NSMakeRect(0, 0, 300, 100),
-                styleMask: [.titled],
-                backing: .buffered,
-                defer: false
-            )
-            let label = NSTextField(labelWithString: "Enter Password:")
-            label.frame = NSMakeRect(13, sheetWindow.frame.height - label.frame.height - 12,
-                                     label.frame.width, label.frame.height)
-
-            let passwordField = NSTextField(frame: NSRect(x: label.frame.origin.x + 2, y: 38, width: 270, height: 24))
-            passwordField.placeholderString = "Password"
-            passwordField.target = self
-            passwordField.action = #selector(sheetOkPressed(_:))
-
-            let cancelButton = NSButton(frame: NSRect(x: sheetWindow.frame.width - 70 - 6, y: 5, width: 70, height: 24))
-            let okButton     = NSButton(frame: NSRect(x: cancelButton.frame.origin.x - 70, y: 5, width: 70, height: 24))
-
-            cancelButton.bezelStyle = .rounded
-            cancelButton.title = "Cancel"
-            cancelButton.target = self
-            cancelButton.action = #selector(sheetCancelPressed(_:))
-
-            okButton.bezelStyle = .rounded
-            okButton.title = "Try"
-            okButton.target = self
-            okButton.action = #selector(sheetOkPressed(_:))
-            okButton.isHighlighted = true
-
-            sheetWindow.contentView?.addSubview(label)
-            sheetWindow.contentView?.addSubview(passwordField)
-            sheetWindow.contentView?.addSubview(okButton)
-            sheetWindow.contentView?.addSubview(cancelButton)
-
-            self.window?.beginSheet(sheetWindow, completionHandler: { response in
-                password = passwordField.stringValue
-                DispatchQueue.global(qos: .userInitiated).async { done(response == .OK) }
-            })
+            isScanning = true
+            networkRequestingPassword = network
         } else {
-            DispatchQueue.global(qos: .userInitiated).async { done(true) }
+            performJoin(to: network, password: "")
         }
     }
 
-    @objc func disassociateButton(_ sender: Any?) {
+    func performJoin(to network: JWScanResult, password: String) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+            defer { DispatchQueue.main.async { self.isScanning = false } }
+            guard let iface = CWWiFiClient.shared().interface() else {
+                DispatchQueue.main.async {
+                    self.alertState?.show(title: "Join Failed", message: "No Wi-Fi interface found.")
+                }
+                return
+            }
+            DispatchQueue.main.async { self.interfaceName = iface.interfaceName ?? "en0" }
+            let matched = (try? iface.scanForNetworks(withName: network.ssid))?.first { $0.bssid == network.bssid }
+            if let cwNet = matched {
+                do {
+                    try iface.associate(to: cwNet, password: password.isEmpty ? nil : password)
+                } catch {
+                    print("Join failed: \(error)")
+                }
+            }
+        }
+    }
+
+    /// Dismisses the password sheet and clears scanning (use for Cancel).
+    func dismissJoinPasswordSheet() {
+        networkRequestingPassword = nil
+        isScanning = false
+    }
+
+    /// Closes the password sheet only; scanning is cleared when performJoin finishes (use for Try).
+    func clearJoinPasswordSheet() {
+        networkRequestingPassword = nil
+    }
+
+    func disassociateButton(_ sender: Any?) {
         CWWiFiClient.shared().interface()?.disassociate()
     }
 
-    @objc func jamButton(_ sender: Any?) {
-        var theNetworks: [JWScanResult] = []
-        for idx in networksTable?.selectedRowIndexes ?? [] {
-            theNetworks.append(self.networks[idx])
-        }
+    func jamButton(_ sender: Any?) {
         let sniffer = ANWiFiSniffer(interfaceName: interfaceName)
-        let gatherer = JWTrafficGatherer(frame: bounds, sniffer: sniffer, networks: theNetworks)
-        (NSApp.delegate as? JWAppDelegate)?.push(gatherer, direction: .forward)
+        let gatherer = JWTrafficGatherer(navigation: navigation, sniffer: sniffer, networks: selectedNetworks)
+        navigation?.push(.gatherer(gatherer))
     }
 
-    // MARK: - Scanning -
+    func copyBSSID(_ sender: Any?) {
+        guard let bssid = selectedBSSID() else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(bssid, forType: .string)
+        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+        animateCopyFeedback()
+    }
+
+    @objc func copy(_ sender: Any?) {
+        copyBSSID(sender)
+    }
 
     func scanInBackground() {
         DispatchQueue.global(qos: .default).async {
             guard let iface = CWWiFiClient.shared().interface() else {
-                self.performSelector(onMainThread: #selector(self.handleScanError),
-                                     with: nil, waitUntilDone: false)
+                DispatchQueue.main.async { self.handleScanError() }
                 return
             }
             self.interfaceName = iface.interfaceName ?? "en0"
 
-            if let beaconResults = JWListView.scanViaBeaconFrames(interfaceName: self.interfaceName,
-                                                                  supportedChannels: iface.supportedWLANChannels() ?? []),
-               !beaconResults.isEmpty {
-                self.performSelector(onMainThread: #selector(self.handleScanSuccess(_:)),
-                                     with: beaconResults, waitUntilDone: false)
+            if let beaconResults = JWListView.scanViaBeaconFrames(interfaceName: self.interfaceName, supportedChannels: iface.supportedWLANChannels() ?? []), !beaconResults.isEmpty {
+                DispatchQueue.main.async { self.handleScanSuccess(beaconResults) }
                 return
             }
 
-            // Apple80211Scan bypasses both the root-process SSID restriction and the
-            // Location Services requirement — it's the same API the original app used.
-            // The framework is already linked so dlopen finds it without loading.
-            if let cwNetworks = JWListView.scanViaApple80211(interfaceName: self.interfaceName),
-               !cwNetworks.isEmpty {
+            if let cwNetworks = JWListView.scanViaApple80211(interfaceName: self.interfaceName), !cwNetworks.isEmpty {
                 let results = cwNetworks.map { JWScanResult.from(cwNetwork: $0) }
-                self.performSelector(onMainThread: #selector(self.handleScanSuccess(_:)),
-                                     with: results, waitUntilDone: false)
+                DispatchQueue.main.async { self.handleScanSuccess(results) }
                 return
             }
 
-            // Fallback: spawn a child process as the console user so CoreWLAN returns
-            // real SSIDs (works when the user has granted Location Services permission).
             var uid: uid_t = 0
-            var gid: gid_t = 0
+            var gid: uid_t = 0
             let store = SCDynamicStoreCreate(kCFAllocatorDefault, "JamWiFi" as CFString, nil, nil)
             _ = SCDynamicStoreCopyConsoleUser(store, &uid, &gid)
 
             guard uid != 0, let execPath = Bundle.main.executablePath else {
-                self.performSelector(onMainThread: #selector(self.handleScanError),
-                                     with: nil, waitUntilDone: false)
+                DispatchQueue.main.async { self.handleScanError() }
                 return
             }
 
@@ -284,70 +129,59 @@ class JWListView: NSView, NSTableViewDelegate, NSTableViewDataSource {
             let readFd = execPath.withCString { cPath in
                 spawnScanSubprocess(cPath, uid, gid, &childPid)
             }
+
             guard readFd >= 0 else {
-                self.performSelector(onMainThread: #selector(self.handleScanError),
-                                     with: nil, waitUntilDone: false)
+                DispatchQueue.main.async { self.handleScanError() }
                 return
             }
 
-            let fh = FileHandle(fileDescriptor: readFd, closeOnDealloc: true)
-            let data = fh.readDataToEndOfFile()
+            let fileHandle = FileHandle(fileDescriptor: readFd, closeOnDealloc: true)
+            let data = fileHandle.readDataToEndOfFile()
             var status: Int32 = 0
             waitpid(childPid, &status, 0)
 
             guard !data.isEmpty,
                   let jsonArray = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-                self.performSelector(onMainThread: #selector(self.handleScanError),
-                                     with: nil, waitUntilDone: false)
+                DispatchQueue.main.async { self.handleScanError() }
                 return
             }
 
             let scanned = jsonArray.compactMap { JWScanResult.from(dict: $0) }
-            self.performSelector(onMainThread: #selector(self.handleScanSuccess(_:)),
-                                 with: scanned, waitUntilDone: false)
+            DispatchQueue.main.async { self.handleScanSuccess(scanned) }
         }
     }
 
-    // Calls Apple80211Scan via dlopen — the framework is already linked so this is
-    // just a lookup, not a fresh load.  Returns nil if any symbol is unavailable.
     private static func scanViaApple80211(interfaceName: String) -> [CWNetwork]? {
         let path = "/System/Library/PrivateFrameworks/Apple80211.framework/Apple80211"
-        // RTLD_NOLOAD: only succeeds if already in memory (it is — it's linked).
-        // If somehow not loaded, fall back to a normal open.
-        guard let fwHandle = dlopen(path, RTLD_NOLOAD | RTLD_NOW)
-                          ?? dlopen(path, RTLD_LAZY) else { return nil }
+        guard let fwHandle = dlopen(path, RTLD_NOLOAD | RTLD_NOW) ?? dlopen(path, RTLD_LAZY) else { return nil }
         defer { dlclose(fwHandle) }
 
-        typealias OpenFn  = @convention(c) (UnsafeMutablePointer<UnsafeMutableRawPointer?>) -> Int32
-        typealias BindFn  = @convention(c) (UnsafeMutableRawPointer?, CFString) -> Int32
-        typealias ScanFn  = @convention(c) (UnsafeMutableRawPointer?,
-                                            UnsafeMutablePointer<Unmanaged<CFArray>?>,
-                                            CFDictionary) -> Int32
+        typealias OpenFn = @convention(c) (UnsafeMutablePointer<UnsafeMutableRawPointer?>) -> Int32
+        typealias BindFn = @convention(c) (UnsafeMutableRawPointer?, CFString) -> Int32
+        typealias ScanFn = @convention(c) (UnsafeMutableRawPointer?, UnsafeMutablePointer<Unmanaged<CFArray>?>, CFDictionary) -> Int32
         typealias CloseFn = @convention(c) (UnsafeMutableRawPointer?) -> Int32
 
-        guard let openPtr  = dlsym(fwHandle, "Apple80211Open"),
-              let bindPtr  = dlsym(fwHandle, "Apple80211BindToInterface"),
-              let scanPtr  = dlsym(fwHandle, "Apple80211Scan"),
+        guard let openPtr = dlsym(fwHandle, "Apple80211Open"),
+              let bindPtr = dlsym(fwHandle, "Apple80211BindToInterface"),
+              let scanPtr = dlsym(fwHandle, "Apple80211Scan"),
               let closePtr = dlsym(fwHandle, "Apple80211Close") else { return nil }
 
-        let open80211  = unsafeBitCast(openPtr,  to: OpenFn.self)
-        let bind80211  = unsafeBitCast(bindPtr,  to: BindFn.self)
-        let scan80211  = unsafeBitCast(scanPtr,  to: ScanFn.self)
+        let open80211 = unsafeBitCast(openPtr, to: OpenFn.self)
+        let bind80211 = unsafeBitCast(bindPtr, to: BindFn.self)
+        let scan80211 = unsafeBitCast(scanPtr, to: ScanFn.self)
         let close80211 = unsafeBitCast(closePtr, to: CloseFn.self)
 
         var wh: UnsafeMutableRawPointer? = nil
         guard open80211(&wh) == 0, let wifiHandle = wh else { return nil }
-        defer { close80211(wifiHandle) }
+        defer { _ = close80211(wifiHandle) }
 
-        bind80211(wifiHandle, interfaceName as CFString)
-
+        _ = bind80211(wifiHandle, interfaceName as CFString)
         var rawList: Unmanaged<CFArray>? = nil
-        scan80211(wifiHandle, &rawList, [:] as CFDictionary)
+        _ = scan80211(wifiHandle, &rawList, [:] as CFDictionary)
         return rawList?.takeRetainedValue() as? [CWNetwork]
     }
 
-    private static func scanViaBeaconFrames(interfaceName: String,
-                                            supportedChannels: Set<CWChannel>) -> [JWScanResult]? {
+    private static func scanViaBeaconFrames(interfaceName: String, supportedChannels: Set<CWChannel>) -> [JWScanResult]? {
         guard let tap = ANInterface(interface: interfaceName) else { return nil }
         defer { tap.closeInterface() }
 
@@ -361,9 +195,7 @@ class JWListView: NSView, NSTableViewDelegate, NSTableViewDataSource {
         var networksByKey: [String: JWScanResult] = [:]
         for channel in channels {
             guard tap.setChannel(channel.channelNumber) else { continue }
-
-            let dwellTime: TimeInterval = channel.channelBand == .band2GHz ? 0.18 : 0.12
-            let deadline = Date(timeIntervalSinceNow: dwellTime)
+            let deadline = Date(timeIntervalSinceNow: channel.channelBand == .band2GHz ? 0.18 : 0.12)
             repeat {
                 autoreleasepool {
                     guard let packet = tap.nextPacket(false) else { return }
@@ -371,15 +203,9 @@ class JWListView: NSView, NSTableViewDelegate, NSTableViewDataSource {
                     let type = (frameControl >> 2) & 0x3
                     let subtype = (frameControl >> 4) & 0xF
                     guard type == 0, subtype == 8 || subtype == 5,
-                          let result = JWScanResult.from(beaconPacket: packet,
-                                                         supportedChannels: supportedChannels) else {
-                        return
-                    }
-
+                          let result = JWScanResult.from(beaconPacket: packet, supportedChannels: supportedChannels) else { return }
                     let key = result.bssid ?? "\(result.channelBandRaw):\(result.channelNumber):\(result.ssid ?? "<Hidden>")"
-                    if let existing = networksByKey[key], existing.rssiValue >= result.rssiValue {
-                        return
-                    }
+                    if let existing = networksByKey[key], existing.rssiValue >= result.rssiValue { return }
                     networksByKey[key] = result
                 }
             } while Date() < deadline
@@ -387,95 +213,274 @@ class JWListView: NSView, NSTableViewDelegate, NSTableViewDataSource {
         return Array(networksByKey.values)
     }
 
-    // MARK: - Table View -
-
-    func numberOfRows(in tableView: NSTableView) -> Int { networks.count }
-
-    func tableView(_ tableView: NSTableView, objectValueFor tableColumn: NSTableColumn?, row: Int) -> Any? {
-        let network = networks[row]
-        switch tableColumn?.identifier.rawValue {
-        case "channelBand":
-            switch network.channelBandRaw {
-            case CWChannelBand.band2GHz.rawValue: return "2.4 GHz"
-            case CWChannelBand.band5GHz.rawValue: return "5 GHz"
-            default: return network.channelBandRaw == 0 ? "?" : "\(network.channelBandRaw) GHz"
-            }
-        case "channel": return NSNumber(value: network.channelNumber)
-        case "essid":   return network.ssid ?? "<Hidden>"
-        case "bssid":   return network.bssid ?? ""
-        case "enc":     return securityTypeString(network)
-        case "rssi":    return NSNumber(value: network.rssiValue).description
-        default:        return nil
-        }
-    }
-
-    func tableView(_ tableView: NSTableView, setObjectValue object: Any?, for tableColumn: NSTableColumn?, row: Int) {}
-
-    func tableViewSelectionDidChange(_ notification: Notification) {
-        let count = networksTable?.selectedRowIndexes.count ?? 0
-        jamButton?.isEnabled  = count > 0
-        joinButton?.isEnabled = count == 1
-    }
-
     func securityTypeString(_ network: JWScanResult?) -> String {
         guard let network = network else { return "?" }
         if network.supportsSecurity(.none) { return "Open" }
         var parts: [String] = []
-        if network.supportsSecurity(.WEP)          { parts.append("WEP") }
-        if network.supportsSecurity(.dynamicWEP)   { parts.append("Dynamic WEP") }
-        if network.supportsSecurity(.wpaPersonal)  { parts.append("WPA (P)") }
+        if network.supportsSecurity(.WEP) { parts.append("WEP") }
+        if network.supportsSecurity(.dynamicWEP) { parts.append("Dynamic WEP") }
+        if network.supportsSecurity(.wpaPersonal) { parts.append("WPA (P)") }
         if network.supportsSecurity(.wpa2Personal) { parts.append("WPA2 (P)") }
-        if network.supportsSecurity(.wpaEnterprise)  { parts.append("WPA (E)") }
+        if network.supportsSecurity(.wpaEnterprise) { parts.append("WPA (E)") }
         if network.supportsSecurity(.wpa2Enterprise) { parts.append("WPA2 (E)") }
-        if network.supportsSecurity(.unknown)      { parts.append("Unknown") }
+        if network.supportsSecurity(.unknown) { parts.append("Unknown") }
         return parts.isEmpty ? "?" : parts.joined(separator: " / ")
     }
 
-    func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
-        guard let sortDescriptor = tableView.sortDescriptors.first else { return }
-        sortAscending = sortDescriptor.ascending
-        sortOrder = sortDescriptor.key!
-        sortNetworks()
-        networksTable?.reloadData()
-    }
+    func sortNetworks(by key: String) {
+        if sortOrder == key {
+            sortAscending.toggle()
+        } else {
+            sortOrder = key
+            sortAscending = true
+        }
 
-    func sortNetworks() {
-        if sortOrder.isEmpty { return }
         let order: ComparisonResult = sortAscending ? .orderedAscending : .orderedDescending
-        switch sortOrder {
+        switch key {
         case "channelBand": networks.sort { String($0.channelBandRaw).localizedStandardCompare(String($1.channelBandRaw)) == order }
-        case "channel":     networks.sort { String($0.channelNumber).localizedStandardCompare(String($1.channelNumber)) == order }
-        case "essid":       networks.sort { ($0.ssid ?? "<Hidden>").localizedStandardCompare($1.ssid ?? "<Hidden>") == order }
-        case "bssid":       networks.sort { ($0.bssid ?? "").localizedStandardCompare($1.bssid ?? "") == order }
-        case "enc":         networks.sort { securityTypeString($0).localizedStandardCompare(securityTypeString($1)) == order }
-        case "rssi":        networks.sort { String($0.rssiValue).localizedStandardCompare(String($1.rssiValue)) == order }
+        case "channel": networks.sort { String($0.channelNumber).localizedStandardCompare(String($1.channelNumber)) == order }
+        case "essid": networks.sort { ($0.ssid ?? "<Hidden>").localizedStandardCompare($1.ssid ?? "<Hidden>") == order }
+        case "bssid": networks.sort { ($0.bssid ?? "").localizedStandardCompare($1.bssid ?? "") == order }
+        case "enc": networks.sort { securityTypeString($0).localizedStandardCompare(securityTypeString($1)) == order }
+        case "rssi": networks.sort { String($0.rssiValue).localizedStandardCompare(String($1.rssiValue)) == order }
         default: break
         }
     }
 
-    // MARK: - Private -
-
-    @objc private func handleScanError() {
-        progressIndicator?.stopAnimation(self)
-        scanButton?.isEnabled = true
-        runAlert("Scan Failed", "A network scan could not be completed at this time.")
+    var selectedNetworks: [JWScanResult] {
+        networks.filter { selectedNetworkIDs.contains(networkID(for: $0)) }
     }
 
-    @objc private func handleScanSuccess(_ theNetworks: [JWScanResult]?) {
+    func setSelection(_ ids: Set<String>) {
+        selectedNetworkIDs = ids
+        updateHeaderStats()
+    }
+
+    private func handleScanError() {
+        isScanning = false
+        updateHeaderStats(message: "Scan failed. Check permissions and try again.")
+        DispatchQueue.main.async { [weak self] in
+            self?.alertState?.show(title: "Scan Failed", message: "A network scan could not be completed at this time.")
+        }
+    }
+
+    private func handleScanSuccess(_ theNetworks: [JWScanResult]?) {
         var newNetworks = theNetworks ?? []
         outerLoop: for existing in networks {
             for n in newNetworks where isNetworkEqual(existing, n) { continue outerLoop }
             newNetworks.append(existing)
         }
-        progressIndicator?.stopAnimation(self)
-        scanButton?.isEnabled = true
+        isScanning = false
         networks = newNetworks
-        sortNetworks()
-        networksTable?.reloadData()
+        syncSelection()
+        updateHeaderStats()
     }
 
     private func isNetworkEqual(_ a: JWScanResult, _ b: JWScanResult) -> Bool {
-        return a.ssid == b.ssid && a.bssid == b.bssid &&
-               a.channelNumber == b.channelNumber && a.channelBandRaw == b.channelBandRaw
+        a.ssid == b.ssid && a.bssid == b.bssid && a.channelNumber == b.channelNumber && a.channelBandRaw == b.channelBandRaw
+    }
+
+    private func selectedBSSID() -> String? {
+        selectedNetworks.first?.bssid
+    }
+
+    private func updateHeaderStats(message: String? = nil) {
+        if let message = message {
+            headerStatsText = message
+            return
+        }
+        let selectionCount = selectedNetworkIDs.count
+        if networks.isEmpty {
+            headerStatsText = "No scan results yet"
+        } else if selectionCount > 0 {
+            headerStatsText = "\(networks.count) networks • \(selectionCount) selected"
+        } else {
+            headerStatsText = "\(networks.count) networks discovered"
+        }
+    }
+
+    private func animateCopyFeedback() {
+        copyFeedbackResetWorkItem?.cancel()
+        copyButtonTitle = "Copied"
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.copyButtonTitle = "Copy BSSID"
+        }
+        copyFeedbackResetWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: workItem)
+    }
+
+    private func syncSelection() {
+        let validIDs = Set(networks.map { networkID(for: $0) })
+        selectedNetworkIDs = selectedNetworkIDs.intersection(validIDs)
+    }
+
+    fileprivate func networkID(for network: JWScanResult) -> String {
+        network.bssid ?? "\(network.channelBandRaw)-\(network.channelNumber)-\(network.ssid ?? "<Hidden>")"
     }
 }
+
+struct JWListScreen: View {
+    @ObservedObject var controller: JWListView
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Networks")
+                    .font(.title2.weight(.semibold))
+                Spacer()
+                Text(controller.headerStatsText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 0) {
+                headerRow
+                Divider()
+                List(selection: Binding(
+                    get: { controller.selectedNetworkIDs },
+                    set: { controller.setSelection($0) }
+                )) {
+                    ForEach(controller.networks, id: \.self) { network in
+                        NetworkRowView(
+                            network: network,
+                            securityText: controller.securityTypeString(network)
+                        )
+                        .tag(controller.networkID(for: network))
+                    }
+                }
+                .listStyle(.plain)
+            }
+
+            HStack(spacing: 12) {
+                Button("Deauth") { controller.disassociateButton(nil) }
+                Button("Join") { controller.joinButton(nil) }
+                    .disabled(controller.selectedNetworks.count != 1)
+                Button("Scan") { controller.scanButton(nil) }
+                    .keyboardShortcut("r", modifiers: [.command])
+                Button(controller.copyButtonTitle) { controller.copyBSSID(nil) }
+                    .disabled(controller.selectedNetworks.count != 1 || controller.selectedNetworks.first?.bssid == nil)
+                Spacer()
+                if controller.isScanning {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+                Button("Monitor") { controller.jamButton(nil) }
+                    .disabled(controller.selectedNetworks.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .sheet(isPresented: Binding(
+            get: { controller.networkRequestingPassword != nil },
+            set: { if !$0 { controller.dismissJoinPasswordSheet() } }
+        )) {
+            if let network = controller.networkRequestingPassword {
+                JoinPasswordSheet(network: network, controller: controller)
+            }
+        }
+    }
+
+    private var headerRow: some View {
+        HStack(spacing: 12) {
+            headerButton("CH", key: "channel")
+                .frame(width: 48, alignment: .leading)
+            headerButton("ESSID", key: "essid")
+                .frame(width: 180, alignment: .leading)
+            headerButton("BSSID", key: "bssid")
+                .frame(width: 150, alignment: .leading)
+            headerButton("Security", key: "enc")
+                .frame(maxWidth: .infinity, alignment: .leading)
+            headerButton("RSSI", key: "rssi")
+                .frame(width: 64, alignment: .trailing)
+            headerButton("Band", key: "channelBand")
+                .frame(width: 72, alignment: .leading)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+    }
+
+    private func headerButton(_ title: String, key: String) -> some View {
+        Button(title) {
+            controller.sortNetworks(by: key)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct JoinPasswordSheet: View {
+    let network: JWScanResult
+    @ObservedObject var controller: JWListView
+    @State private var password = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Enter Password:")
+                .font(.headline)
+            TextField("Password", text: $password)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    controller.dismissJoinPasswordSheet()
+                }
+                .keyboardShortcut(.cancelAction)
+                Button("Try") {
+                    controller.performJoin(to: network, password: password)
+                    controller.clearJoinPasswordSheet()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 320)
+    }
+}
+
+private struct NetworkRowView: View {
+    let network: JWScanResult
+    let securityText: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("\(network.channelNumber)")
+                .frame(width: 48, alignment: .leading)
+            Text(network.ssid ?? "<Hidden>")
+                .frame(width: 180, alignment: .leading)
+            Text(network.bssid ?? "")
+                .font(.system(.body, design: .monospaced))
+                .frame(width: 150, alignment: .leading)
+            Text(securityText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text("\(network.rssiValue)")
+                .frame(width: 64, alignment: .trailing)
+            Text(channelBandLabel)
+                .frame(width: 72, alignment: .leading)
+        }
+        .font(.system(size: 13))
+    }
+
+    private var channelBandLabel: String {
+        switch network.channelBandRaw {
+        case CWChannelBand.band2GHz.rawValue: return "2.4 GHz"
+        case CWChannelBand.band5GHz.rawValue: return "5 GHz"
+        default: return "?"
+        }
+    }
+}
+
+#if canImport(SwiftUI)
+private struct JWListViewPreviewWrapper: View {
+    @StateObject private var controller: JWListView = {
+        let c = JWListView(navigation: nil)
+        c.networks = JWPreviewFactory.sampleNetworks
+        return c
+    }()
+    var body: some View { JWListScreen(controller: controller) }
+}
+struct JWListView_Previews: PreviewProvider {
+    static var previews: some View {
+        JWListViewPreviewWrapper()
+            .frame(width: 1100, height: 720)
+    }
+}
+#endif

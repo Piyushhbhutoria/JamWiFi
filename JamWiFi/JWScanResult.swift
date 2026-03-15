@@ -203,3 +203,11 @@ class JWScanResult: NSObject {
         return data.prefix(signature.count).elementsEqual(signature)
     }
 }
+
+extension Array where Element == JWScanResult {
+    func containsBSSID(_ bssid: UnsafePointer<UInt8>?) -> Bool {
+        guard let bssid = bssid else { return false }
+        let str = MACToString(bssid)
+        return contains { $0.bssid == str }
+    }
+}

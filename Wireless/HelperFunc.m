@@ -1,18 +1,7 @@
 
-
-
 #import "HelperFunc.h"
 #include <fcntl.h>
 #include <sys/wait.h>
-#include <stdlib.h>
-
-void runAlert(NSString*title, NSString*message) {
-    NSAlert *alert = [[NSAlert alloc] init];
-    alert.messageText = title;
-    alert.informativeText = message;
-    [alert addButtonWithTitle:@"OK"];
-    [alert runModal];
-}
 
 // All operations in the child between fork() and execv() are async-signal-safe
 // C calls only — no Swift/ObjC runtime is touched.

