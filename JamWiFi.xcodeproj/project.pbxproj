@@ -25,7 +25,6 @@
 		D771CD0523BF684B006BD814 /* JWClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D771CCF723BF684B006BD814 /* JWClient.swift */; };
 		D771CD0623BF684B006BD814 /* Credits.rtf in Resources */ = {isa = PBXBuildFile; fileRef = D771CCF823BF684B006BD814 /* Credits.rtf */; };
 		D771CD0A23BF684B006BD814 /* JWAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D771CCFE23BF684B006BD814 /* JWAppDelegate.swift */; };
-		JWAPP00223BF684B006BD814 /* JamWiFiApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = JWAPP00123BF684B006BD814 /* JamWiFiApp.swift */; };
 		D771CD0C23BF684B006BD814 /* JWClientKiller.swift in Sources */ = {isa = PBXBuildFile; fileRef = D771CD0123BF684B006BD814 /* JWClientKiller.swift */; };
 		D775909E22E50F020033BBE3 /* Apple80211.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D775909D22E50F020033BBE3 /* Apple80211.framework */; };
 		D7D9D43724293ED8006527FD /* JWPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7D9D43624293ED8006527FD /* JWPreferences.swift */; };
@@ -33,6 +32,7 @@
 		FAB94C0915C05BB10031197A /* CoreWLAN.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAB94C0815C05BB10031197A /* CoreWLAN.framework */; };
 		FAB94C0B15C05BB50031197A /* libpcap.dylib in Frameworks */ = {isa = PBXBuildFile; fileRef = FAB94C0A15C05BB50031197A /* libpcap.dylib */; };
 		FAB94C2815C06C9C0031197A /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FAB94C2715C06C9C0031197A /* Security.framework */; };
+		JWAPP00223BF684B006BD814 /* JamWiFiApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = JWAPP00123BF684B006BD814 /* JamWiFiApp.swift */; };
 		JWHLP00223BF6818006BD814 /* JWAppHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = JWHLP00123BF6818006BD814 /* JWAppHelpers.swift */; };
 		JWMAC00223BF6818006BD814 /* JWMacUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = JWMAC00123BF6818006BD814 /* JWMacUtils.swift */; };
 		JWNAV00223BF6818006BD814 /* JWAppNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = JWNAV00123BF6818006BD814 /* JWAppNavigation.swift */; };
@@ -75,7 +75,6 @@
 		D771CCF723BF684B006BD814 /* JWClient.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = JWClient.swift; sourceTree = "<group>"; };
 		D771CCF923BF684B006BD814 /* Base */ = {isa = PBXFileReference; lastKnownFileType = text.rtf; name = Base; path = Base.lproj/Credits.rtf; sourceTree = "<group>"; };
 		D771CCFD23BF684B006BD814 /* JamWiFi-Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = "JamWiFi-Info.plist"; sourceTree = "<group>"; };
-		JWAPP00123BF684B006BD814 /* JamWiFiApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamWiFiApp.swift; sourceTree = "<group>"; };
 		D771CCFE23BF684B006BD814 /* JWAppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = JWAppDelegate.swift; sourceTree = "<group>"; };
 		D771CD0023BF684B006BD814 /* JamWiFi-Bridging-Header.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "JamWiFi-Bridging-Header.h"; sourceTree = "<group>"; };
 		D771CD0123BF684B006BD814 /* JWClientKiller.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = JWClientKiller.swift; sourceTree = "<group>"; };
@@ -84,13 +83,12 @@
 		FAB94BC715C0557A0031197A /* JamWiFi.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JamWiFi.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FAB94BCB15C0557A0031197A /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
 		FAB94BCE15C0557A0031197A /* AppKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppKit.framework; path = System/Library/Frameworks/AppKit.framework; sourceTree = SDKROOT; };
-		FAB94BCF15C0557A0031197A /* CoreData.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreData.framework; path = System/Library/Frameworks/CoreData.framework; sourceTree = SDKROOT; };
 		FAB94BD015C0557A0031197A /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		FAB94C0815C05BB10031197A /* CoreWLAN.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreWLAN.framework; path = System/Library/Frameworks/CoreWLAN.framework; sourceTree = SDKROOT; };
 		FAB94C0A15C05BB50031197A /* libpcap.dylib */ = {isa = PBXFileReference; lastKnownFileType = "compiled.mach-o.dylib"; name = libpcap.dylib; path = usr/lib/libpcap.dylib; sourceTree = SDKROOT; };
 		FAB94C1715C06A910031197A /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
-		FAB94C2515C06C970031197A /* ServiceManagement.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ServiceManagement.framework; path = System/Library/Frameworks/ServiceManagement.framework; sourceTree = SDKROOT; };
 		FAB94C2715C06C9C0031197A /* Security.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Security.framework; path = System/Library/Frameworks/Security.framework; sourceTree = SDKROOT; };
+		JWAPP00123BF684B006BD814 /* JamWiFiApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JamWiFiApp.swift; sourceTree = "<group>"; };
 		JWHLP00123BF6818006BD814 /* JWAppHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JWAppHelpers.swift; sourceTree = "<group>"; };
 		JWMAC00123BF6818006BD814 /* JWMacUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JWMacUtils.swift; sourceTree = "<group>"; };
 		JWNAV00123BF6818006BD814 /* JWAppNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JWAppNavigation.swift; sourceTree = "<group>"; };
@@ -250,7 +248,7 @@
 		FAB94BBE15C0557A0031197A /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				BuildIndependentTargetsInParallel = YES;
+				BuildIndependentTargetsInParallel = NO;
 				CLASSPREFIX = AN;
 				LastUpgradeCheck = 2630;
 				ORGANIZATIONNAME = loopbacklabs;
@@ -442,7 +440,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2.0.0;
 				DEAD_CODE_STRIPPING = YES;
@@ -483,7 +481,7 @@
 				CLANG_DEBUG_INFORMATION_LEVEL = "line-tables-only";
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2.0.0;
 				DEAD_CODE_STRIPPING = YES;
@@ -526,7 +524,7 @@
 				FAB94BE315C0557A0031197A /* Debug configuration for PBXProject "JamWiFi" */,
 				FAB94BE415C0557A0031197A /* Release configuration for PBXProject "JamWiFi" */,
 			);
-			defaultConfigurationName = Debug;
+			defaultConfigurationName = Release;
 		};
 		FAB94BE515C0557A0031197A /* Build configuration list for PBXNativeTarget "JamWiFi" */ = {
 			isa = XCConfigurationList;
@@ -534,7 +532,7 @@
 				FAB94BE615C0557A0031197A /* Debug configuration for PBXNativeTarget "JamWiFi" */,
 				FAB94BE715C0557A0031197A /* Release configuration for PBXNativeTarget "JamWiFi" */,
 			);
-			defaultConfigurationName = Debug;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
