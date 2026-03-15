@@ -1,25 +1,20 @@
 //
 //  CarbonAppProcess.h
-//  AutoConvert
-//
-//  Created by Alex Nichol on 7/3/11.
-//  Copyright 2011 Alex Nichol. All rights reserved.
+//  JamWiFi
 //
 
 #import <Foundation/Foundation.h>
-#import <Carbon/Carbon.h>
+#import <AppKit/AppKit.h>
 
-@interface CarbonAppProcess : NSObject {
-    ProcessSerialNumber processSerial;
-}
+@interface CarbonAppProcess : NSObject
 
-- (id)initWithProcessSerial:(ProcessSerialNumber)num;
-+ (CarbonAppProcess *)currentProcess;
+@property (nonatomic, strong) NSRunningApplication *app;
+
++ (CarbonAppProcess *)current;
 + (CarbonAppProcess *)frontmostProcess;
-+ (CarbonAppProcess *)nextProcess;
+
 - (void)makeFrontmost;
 - (void)setHidden:(BOOL)hide;
 - (BOOL)isFrontmost;
-- (ProcessSerialNumber)serial;
 
 @end

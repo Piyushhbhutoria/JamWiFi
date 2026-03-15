@@ -8,7 +8,7 @@ import AppKit
 
 class JWTrafficGatherer: NSView, ANWiFiSnifferDelegate, NSTableViewDelegate, NSTableViewDataSource {
 	var sniffer: ANWiFiSniffer?
-	var networks: [CWNetwork] = []
+	var networks: [JWScanResult] = []
 	var channels: [CWChannel] = []
 	var channelIndex = 0
 	var hopTimer: Timer?
@@ -21,7 +21,7 @@ class JWTrafficGatherer: NSView, ANWiFiSnifferDelegate, NSTableViewDelegate, NST
 	var sortAscending = true
 	var sortOrder = ""
 	
-	init(frame frameRect: NSRect, sniffer aSniffer: ANWiFiSniffer?, networks theNetworks: [CWNetwork]?) {
+	init(frame frameRect: NSRect, sniffer aSniffer: ANWiFiSniffer?, networks theNetworks: [JWScanResult]?) {
 		super.init(frame: frameRect)
 		configureUI()
 		
@@ -33,10 +33,9 @@ class JWTrafficGatherer: NSView, ANWiFiSnifferDelegate, NSTableViewDelegate, NST
 		
 		var mChannels: [CWChannel] = []
 		for net in networks {
-			if let wlanChannel = net.wlanChannel {
-				if !mChannels.contains(wlanChannel) {
-					mChannels.append(wlanChannel)
-				}
+			if let ch = net.wlanChannel,
+			   !mChannels.contains(where: { $0.channelNumber == ch.channelNumber && $0.channelBand == ch.channelBand }) {
+				mChannels.append(ch)
 			}
 		}
 		channels = mChannels
@@ -126,6 +125,19 @@ class JWTrafficGatherer: NSView, ANWiFiSnifferDelegate, NSTableViewDelegate, NST
 		clientsScrollView?.autoresizingMask = [.width, .height]
 		continueButton?.autoresizingMask = .minXMargin
 	}
+
+	override func resizeSubviews(withOldSize oldSize: NSSize) {
+		super.resizeSubviews(withOldSize: oldSize)
+		let insets = (window?.contentView as NSView?)?.safeAreaInsets ?? NSEdgeInsetsZero
+		let top = insets.top
+		let bottom = insets.bottom
+		let toolbarBottom = top + 42
+		let contentTop = toolbarBottom + 10
+
+		backButton?.frame = NSRect(x: 10, y: top + 10, width: 100, height: 24)
+		continueButton?.frame = NSRect(x: bounds.width - 110, y: top + 10, width: 100, height: 24)
+		clientsScrollView?.frame = NSRect(x: 10, y: contentTop, width: bounds.width - 20, height: bounds.height - contentTop - bottom)
+	}
 	
 	@objc func backButton(_ sender: Any?) {
 		sniffer?.stop()
@@ -135,7 +147,7 @@ class JWTrafficGatherer: NSView, ANWiFiSnifferDelegate, NSTableViewDelegate, NST
 	}
 	
 	@objc func continueButton(_ sender: Any?) {
-		let killer = JWClientKiller(frame: bounds, sniffer: sniffer, networks: networks, clients: allClients)
+		let killer = JWClientKiller(frame: bounds, sniffer: sniffer, networks: networks as [JWScanResult], clients: allClients)
 		(NSApp.delegate as? JWAppDelegate)?.push(killer, direction: .forward)
 	}
 	

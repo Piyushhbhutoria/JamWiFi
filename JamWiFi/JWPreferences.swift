@@ -16,7 +16,7 @@ class JWPreferences: NSViewController {
 		window.title = "JamWiFi Preferences"
         window.center()
 		window.isMovableByWindowBackground = true
-		window.styleMask = [.titled,.unifiedTitleAndToolbar]
+		window.styleMask = [.titled, .unifiedTitleAndToolbar, .fullSizeContentView]
 		window.titlebarAppearsTransparent = true
 		
 		return window
@@ -35,9 +35,10 @@ class JWPreferences: NSViewController {
 		tempPrefs = UserDefaults.standard.dictionary(forKey: "USER_SCAN_OPTIONS") ?? [:]
 		
 		view = NSView(frame: NSMakeRect(0, 0, 500, 200))
+		let topInset: CGFloat = 52
 		
 		let scanningLabel = NSTextField(labelWithAttributedString: NSAttributedString(string: "Scanning Options", attributes: [.font:NSFont.boldSystemFont(ofSize: 13)]))
-		scanningLabel.frame.origin = CGPoint(x: 15, y: view.frame.height-scanningLabel.frame.height-20)
+		scanningLabel.frame.origin = CGPoint(x: 15, y: view.frame.height - scanningLabel.frame.height - 20 - topInset)
 		
 		let mergeOption = NSButton(checkboxWithTitle: "Merge Networks with same SSIDs and different BSSIDs", target: self, action: #selector(mergeClicked))
 		mergeOption.frame.origin = CGPoint(x: scanningLabel.frame.origin.x, y: scanningLabel.frame.origin.y-mergeOption.frame.height-10)
@@ -75,11 +76,11 @@ class JWPreferences: NSViewController {
 		scanType.selectItem(at: tempPrefs["SCAN_TYPE"] == nil ? 0 : tempPrefs["SCAN_TYPE"] as! Int - 1)
 		
 		let discardButton = NSButton(title: "Discard", target: self, action: #selector(discard))
-		discardButton.frame.origin = CGPoint(x: view.frame.width-discardButton.frame.width-10, y: 10)
+		discardButton.frame.origin = CGPoint(x: view.frame.width - discardButton.frame.width - 10, y: 10)
 		discardButton.refusesFirstResponder = true
 		
 		let saveButton = NSButton(title: "Save", target: self, action: #selector(save))
-		saveButton.frame.origin = CGPoint(x: discardButton.frame.origin.x - saveButton.frame.width+5, y: 10)
+		saveButton.frame.origin = CGPoint(x: discardButton.frame.origin.x - saveButton.frame.width + 5, y: 10)
 		saveButton.refusesFirstResponder = true
 		
 		view.addSubview(scanningLabel)

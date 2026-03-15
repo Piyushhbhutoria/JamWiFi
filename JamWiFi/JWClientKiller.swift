@@ -31,7 +31,7 @@ let DEAUTH_REQ: [UInt8] = [
 class JWClientKiller: NSView, ANWiFiSnifferDelegate, NSTableViewDelegate, NSTableViewDataSource {
 	var clients: [JWClient] = []
 	var channels: [CWChannel] = []
-	var networksForChannel: [CWChannel : [CWNetwork]] = [:]
+	var networksForChannel: [CWChannel : [JWScanResult]] = [:]
 	var channelIndex = 0
 	var sniffer: ANWiFiSniffer?
 	var jamTimer: Timer?
@@ -45,7 +45,7 @@ class JWClientKiller: NSView, ANWiFiSnifferDelegate, NSTableViewDelegate, NSTabl
 	var sortOrder = ""
 	
 
-	init(frame: NSRect, sniffer theSniffer: ANWiFiSniffer?, networks: [CWNetwork]?, clients theClients: [JWClient]?) {
+	init(frame: NSRect, sniffer theSniffer: ANWiFiSniffer?, networks: [JWScanResult]?, clients theClients: [JWClient]?) {
 		super.init(frame: frame)
 		clients = theClients ?? []
 		sniffer = theSniffer
@@ -54,27 +54,20 @@ class JWClientKiller: NSView, ANWiFiSnifferDelegate, NSTableViewDelegate, NSTabl
 		
 		var mChannels: [CWChannel] = []
 		for net in networks ?? [] {
-			if let wlanChannel = net.wlanChannel {
-				if !mChannels.contains(wlanChannel) {
-					mChannels.append(wlanChannel)
-				}
+			if let ch = net.wlanChannel,
+			   !mChannels.contains(where: { $0.channelNumber == ch.channelNumber && $0.channelBand == ch.channelBand }) {
+				mChannels.append(ch)
 			}
 		}
-		
-		
+
 		channels = mChannels
 		channelIndex = -1
-		
-		var mNetworksPerChannel: [CWChannel : [CWNetwork]] = [:]
+
+		var mNetworksPerChannel: [CWChannel : [JWScanResult]] = [:]
 		for channel in channels {
-			var mNetworks: [CWNetwork] = []
-			for network in networks ?? [] {
-				if network.wlanChannel?.isEqual(to: channel) ?? false {
-					mNetworks.append(network)
-				}
+			let mNetworks = (networks ?? []).filter {
+				$0.channelNumber == channel.channelNumber && $0.channelBandRaw == channel.channelBand.rawValue
 			}
-			
-			
 			mNetworksPerChannel[channel] = mNetworks
 		}
 		networksForChannel = mNetworksPerChannel
@@ -157,6 +150,20 @@ class JWClientKiller: NSView, ANWiFiSnifferDelegate, NSTableViewDelegate, NSTabl
 		doneButton?.autoresizingMask = .minXMargin
 		backButton?.autoresizingMask = .minXMargin
 	}
+
+	override func resizeSubviews(withOldSize oldSize: NSSize) {
+		super.resizeSubviews(withOldSize: oldSize)
+		let insets = (window?.contentView as NSView?)?.safeAreaInsets ?? NSEdgeInsetsZero
+		let top = insets.top
+		let bottom = insets.bottom
+		let toolbarBottom = top + 42
+		let contentTop = toolbarBottom + 10
+
+		newClientsCheck?.frame = NSRect(x: 10, y: top + 10, width: 200, height: 24)
+		backButton?.frame = NSRect(x: bounds.width - 210, y: top + 10, width: 100, height: 24)
+		doneButton?.frame = NSRect(x: bounds.width - 110, y: top + 10, width: 100, height: 24)
+		infoScrollView?.frame = NSRect(x: 10, y: contentTop, width: bounds.width - 20, height: bounds.height - contentTop - bottom)
+	}
 	
 	// MARK: - Events -
 	
@@ -164,7 +171,7 @@ class JWClientKiller: NSView, ANWiFiSnifferDelegate, NSTableViewDelegate, NSTabl
 		jamTimer?.invalidate()
 		jamTimer = nil
 		sniffer?.delegate = nil
-		var networks: [CWNetwork] = []
+		var networks: [JWScanResult] = []
 		for networkArr in networksForChannel.values {
 			networkArr.forEach { networks.append($0) }
 		}
@@ -251,7 +258,7 @@ class JWClientKiller: NSView, ANWiFiSnifferDelegate, NSTableViewDelegate, NSTabl
 		let channel : CWChannel? = channels[channelIndex]
 		sniffer?.setChannel(channel)
 		// deauth all clients on all networks on this channel
-		var networks: [CWNetwork]? = nil
+		var networks: [JWScanResult]? = nil
 		if let channel = channel {
 			networks = networksForChannel[channel]
 		}

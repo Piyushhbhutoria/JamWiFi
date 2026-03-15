@@ -2,59 +2,42 @@
 //  main.m
 //  JamWiFi
 //
-//  Created by Alex Nichol on 7/25/12.
-//  Copyright (c) 2012 __MyCompanyName__. All rights reserved.
-//
 
 #import <Cocoa/Cocoa.h>
-#import <ServiceManagement/ServiceManagement.h>
-#import <Security/Authorization.h>
 #import <CoreWLAN/CoreWLAN.h>
 
 #import "HelperFunc.h"
 #import "JamWiFi-Swift.h"
 
 int main(int argc, char *argv[]) {
-    
+
     @autoreleasepool {
-		
-		NSLog(@"Main.m: Initializing..");
-		
+
+        // Scan mode: invoked as the console user by the root process via
+        // fork+setuid+execv so CoreWLAN returns real SSID/BSSID values.
+        if (argc >= 2 && strcmp(argv[1], "--scan-mode") == 0) {
+            [JWScanModeRunner run];
+            return 0;
+        }
+
+        NSLog(@"Main.m: Initializing..");
+
         if (geteuid()) {
-            OSStatus myStatus;
-            AuthorizationFlags myFlags = kAuthorizationFlagDefaults;
-            AuthorizationRef myAuthorizationRef;
-            
-            myStatus = AuthorizationCreate(NULL, kAuthorizationEmptyEnvironment, myFlags, &myAuthorizationRef);
-            if (myStatus != errAuthorizationSuccess) return myStatus;
-            
-            AuthorizationItem myItems = {kAuthorizationRightExecute, 0, NULL, 0};
-            AuthorizationRights myRights = {1, &myItems};
-            myFlags = kAuthorizationFlagDefaults |
-            kAuthorizationFlagInteractionAllowed |
-            kAuthorizationFlagPreAuthorize |
-            kAuthorizationFlagExtendRights;
-            myStatus = AuthorizationCopyRights(myAuthorizationRef, &myRights, NULL, myFlags, NULL );
-            
-            
-            if (myStatus != errAuthorizationSuccess) {
-				runAlert(@"Cannot run without admin privileges", @"This program cannot tap into the wireless network stack without administrator access.");
-                return 1;
+            NSString *execPath = [[NSBundle mainBundle] executablePath];
+            NSString *script = [NSString stringWithFormat:
+                @"do shell script quoted form of \"%@\" with administrator privileges",
+                execPath];
+            NSAppleScript *appleScript = [[NSAppleScript alloc] initWithSource:script];
+            NSDictionary *errorInfo = nil;
+            [appleScript executeAndReturnError:&errorInfo];
+
+            if (errorInfo) {
+                runAlert(@"Cannot run without admin privileges",
+                         @"This program cannot tap into the wireless network stack without administrator access.");
             }
-            
-            
-            const char * myToolPath = [[[NSBundle mainBundle] executablePath] UTF8String];
-            char * myArguments[] = {NULL};
-            
-            myFlags = kAuthorizationFlagDefaults;
-            myStatus = AuthorizationExecuteWithPrivileges(myAuthorizationRef, myToolPath, myFlags, myArguments,
-                                                          NULL);
-            AuthorizationFree(myAuthorizationRef, kAuthorizationFlagDefaults);
             exit(0);
         }
-		//NSApplication.sharedApplication.delegate = JWAppDelegate.new;
-		//[NSApp setDelegate:JWAppDelegate.new];
-		
+
         return NSApplicationMain(argc, (const char **)argv);
     }
 }
